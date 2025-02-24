@@ -137,7 +137,7 @@ const Player: React.FC = () => {
                 </Typography>
             )}
 
-            <Box id="waveContainer" sx={{ width: '100%', height: '200px', mb: 2, border: '1px solid #ccc' }} />
+            <Box id="waveContainer" sx={{ width: '100%', height: '150px', mb: 2, border: '1px solid #ccc' }} />
 
             {soundController.current && (
                 <Paper elevation={3} sx={{ p: 2, textAlign: 'center' }}>

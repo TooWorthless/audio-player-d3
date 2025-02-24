@@ -40,12 +40,12 @@ class Drawer {
     public generateWaveform(audioData: number[], options: Options) {
         this.options = {
             margin: { top: 20, bottom: 30, left: 20, right: 20 },
-            height: this.parent.clientHeight || 200,
+            height: this.parent.clientHeight || 135,
             width: this.parent.clientWidth || 800,
             padding: 0.8,
             ...options,
         };
-        
+
 
         const { margin, height, width, padding } = this.options;
         const domain = d3.extent(audioData) as [number, number];
@@ -99,7 +99,7 @@ class Drawer {
             .attr('x1', 0)
             .attr('x2', width);
 
-        
+
         const background = this.svg
             .append('rect')
             .attr('width', width)
@@ -116,16 +116,18 @@ class Drawer {
             }
         });
 
-        // График аудио
-        const yScale = d3
-            .scaleLinear()
-            .domain(domain)
-            .range([height - margin.bottom, margin.top]);
+        // Расчёт центральной линии и масштаба амплитуды
+        const center = margin.top + (height - margin.top - margin.bottom) / 2;
+        const maxBarHeight = (height - margin.top - margin.bottom) / 2;
+        const amplitudeScale = d3.scaleLinear().domain([0, 1]).range([0, maxBarHeight]);
 
-        const waveformGroup = this.svg.append('g').attr('fill', '#03A300').style('pointer-events', 'none');
+        // Группа для вейвформы (отключаем pointer-events, чтобы клики проходили сквозь неё)
+        const waveformGroup = this.svg
+            .append('g')
+            .attr('fill', '#03A300')
+            .style('pointer-events', 'none');
 
         const bandWidth = (width - margin.left - margin.right) / audioData.length;
-
         waveformGroup
             .selectAll('rect')
             .data(audioData)
@@ -133,14 +135,28 @@ class Drawer {
             .attr('fill', '#03A300')
             .attr('width', bandWidth * padding)
             .attr('x', (_, i) => this.xScale(i))
-            .attr('y', (d) => yScale(d))
-            .attr('height', (d) => height - margin.bottom - yScale(d))
+            .attr('y', (d) => center - amplitudeScale(d))
+            .attr('height', (d) => amplitudeScale(d) * 2)
             .attr('rx', bandWidth / 2)
             .attr('ry', bandWidth / 2);
 
-        // Ось времени
+        // Для наглядности добавляем пунктирную центральную линию
+        this.svg
+            .append('line')
+            .attr('class', 'center-line')
+            .attr('x1', margin.left)
+            .attr('x2', width - margin.right)
+            .attr('y1', center)
+            .attr('y2', center)
+            .attr('stroke', '#aaa')
+            .attr('stroke-dasharray', '4 2');
+
+        // Отрисовка временной оси снизу
         const timeDomain = this.getTimeDomain();
-        const bandScale = d3.scaleBand().domain(timeDomain).range([margin.left, width - margin.right]);
+        const bandScale = d3
+            .scaleBand()
+            .domain(timeDomain)
+            .range([margin.left, width - margin.right]);
 
         this.svg
             .append('g')
@@ -148,6 +164,7 @@ class Drawer {
             .call(d3.axisBottom(bandScale))
             .select('.domain')
             .remove();
+
 
         // Группа курсора
         const cursorGroup = this.svg.append('g').attr('class', 'cursor');
