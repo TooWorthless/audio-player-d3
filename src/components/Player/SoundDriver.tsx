@@ -10,7 +10,7 @@ class SoundDriver {
     private startedAt = 0;
     public pausedAt = 0;
     private isRunning = false;
-    private currentVolume: number;
+    private currentVolume = 1;
     private cursorAnimationFrameId: number | null = null;
 
     constructor(audioFile: Blob, initialVolume: number = 1) {
@@ -36,8 +36,6 @@ class SoundDriver {
                 this.loadSound(event).then((buffer) => {
                     this.audioBuffer = buffer;
                     this.drawer = new Drawer(buffer, parent);
-
-                    // skip through drag
                     this.drawer.onSeek = (newTime: number) => {
                         if (this.isRunning) {
                             this.pause().then(() => {
@@ -115,8 +113,8 @@ class SoundDriver {
         }
     }
 
-    public drawChart() {
-        this.drawer?.init();
+    public drawChart(options?: any) {
+        this.drawer?.init(options);
     }
 
     private startCursorUpdateLoop() {

@@ -1,10 +1,11 @@
 import * as d3 from 'd3';
 
-interface Options {
+export interface Options {
     margin?: { top: number; bottom: number; left: number; right: number };
     height?: number;
     width?: number;
     padding?: number;
+    waveformType?: 'bars' | 'smooth' | 'sharp';
 }
 
 type OnSeekCallback = (newTime: number) => void;
@@ -40,15 +41,14 @@ class Drawer {
     public generateWaveform(audioData: number[], options: Options) {
         this.options = {
             margin: { top: 20, bottom: 30, left: 20, right: 20 },
-            height: this.parent.clientHeight || 135,
+            height: this.parent.clientHeight || 400,
             width: this.parent.clientWidth || 800,
             padding: 0.8,
+            waveformType: 'bars',
             ...options,
         };
 
-
         const { margin, height, width, padding } = this.options;
-        const domain = d3.extent(audioData) as [number, number];
 
         this.xScale = d3
             .scaleLinear()
@@ -60,14 +60,12 @@ class Drawer {
             .domain([0, this.buffer.duration])
             .range([margin.left, width - margin.right]);
 
-        // Создаём SVG
         this.svg = d3
             .create('svg')
             .attr('width', width)
             .attr('height', height)
             .style('display', 'block');
 
-        // Сетка
         const gridGroup = this.svg
             .append('g')
             .attr('stroke-width', 0.5)
@@ -85,21 +83,27 @@ class Drawer {
 
         gridGroup
             .selectAll('line.horizontal')
-            .data(d3.scaleLinear().domain(domain).ticks())
+            .data(d3.scaleLinear().domain([0, 1]).ticks())
             .join('line')
             .attr('class', 'horizontal')
             .attr('y1', (d) => {
-                const yScale = d3.scaleLinear().domain(domain).range([height - margin.bottom, margin.top]);
+                const yScale = d3
+                    .scaleLinear()
+                    .domain([0, 1])
+                    .range([height - margin.bottom, margin.top]);
                 return yScale(d);
             })
             .attr('y2', (d) => {
-                const yScale = d3.scaleLinear().domain(domain).range([height - margin.bottom, margin.top]);
+                const yScale = d3
+                    .scaleLinear()
+                    .domain([0, 1])
+                    .range([height - margin.bottom, margin.top]);
                 return yScale(d);
             })
             .attr('x1', 0)
             .attr('x2', width);
 
-
+        // Фон для обработки кликов
         const background = this.svg
             .append('rect')
             .attr('width', width)
@@ -116,42 +120,16 @@ class Drawer {
             }
         });
 
-        // Расчёт центральной линии и масштаба амплитуды
-        const center = margin.top + (height - margin.top - margin.bottom) / 2;
-        const maxBarHeight = (height - margin.top - margin.bottom) / 2;
-        const amplitudeScale = d3.scaleLinear().domain([0, 1]).range([0, maxBarHeight]);
+        // Отрисовка вейвформы в зависимости от выбранного режима
+        if (this.options.waveformType === 'smooth') {
+            this.drawSmoothWaveform(audioData);
+        } else if (this.options.waveformType === 'sharp') {
+            this.drawSharpWaveform(audioData);
+        } else {
+            this.drawBarsWaveform(audioData);
+        }
 
-        // Группа для вейвформы (отключаем pointer-events, чтобы клики проходили сквозь неё)
-        const waveformGroup = this.svg
-            .append('g')
-            .attr('fill', '#03A300')
-            .style('pointer-events', 'none');
-
-        const bandWidth = (width - margin.left - margin.right) / audioData.length;
-        waveformGroup
-            .selectAll('rect')
-            .data(audioData)
-            .join('rect')
-            .attr('fill', '#03A300')
-            .attr('width', bandWidth * padding)
-            .attr('x', (_, i) => this.xScale(i))
-            .attr('y', (d) => center - amplitudeScale(d))
-            .attr('height', (d) => amplitudeScale(d) * 2)
-            .attr('rx', bandWidth / 2)
-            .attr('ry', bandWidth / 2);
-
-        // Для наглядности добавляем пунктирную центральную линию
-        this.svg
-            .append('line')
-            .attr('class', 'center-line')
-            .attr('x1', margin.left)
-            .attr('x2', width - margin.right)
-            .attr('y1', center)
-            .attr('y2', center)
-            .attr('stroke', '#aaa')
-            .attr('stroke-dasharray', '4 2');
-
-        // Отрисовка временной оси снизу
+        // time
         const timeDomain = this.getTimeDomain();
         const bandScale = d3
             .scaleBand()
@@ -165,11 +143,8 @@ class Drawer {
             .select('.domain')
             .remove();
 
-
-        // Группа курсора
+        // cursor and him drag logic
         const cursorGroup = this.svg.append('g').attr('class', 'cursor');
-
-        // Вертикальная линия курсора
         cursorGroup
             .append('line')
             .attr('class', 'cursor-line')
@@ -179,17 +154,17 @@ class Drawer {
             .attr('y2', height - margin.bottom)
             .attr('stroke', 'red')
             .attr('stroke-width', 2);
-
-        // Треугольник над курсором
         const triangleSize = 10;
         cursorGroup
             .append('path')
             .attr('class', 'cursor-triangle')
-            .attr('d', d3.symbol().type(d3.symbolTriangle).size(triangleSize * triangleSize)()!)
+            .attr(
+                'd',
+                d3.symbol().type(d3.symbolTriangle).size(triangleSize * triangleSize)()!
+            )
             .attr('fill', 'red')
             .attr('transform', `translate(${margin.left}, ${margin.top - triangleSize})`);
 
-        // Drag для перемотки курсора
         const drag = d3
             .drag<SVGGElement, undefined>()
             .on('start', () => {
@@ -212,12 +187,149 @@ class Drawer {
                     this.onSeek(newTime);
                 }
             });
-
         cursorGroup.call(drag);
+
         return this.svg;
     }
 
-    // Обновление позиции курсора, если не идёт перетаскивание
+    // Отрисовка классической вейвформы в виде прямоугольных столбцов (bars)
+    private drawBarsWaveform(audioData: number[]) {
+        const { margin, height, width, padding } = this.options;
+        const center = margin.top + (height - margin.top - margin.bottom) / 2;
+        const maxBarHeight = (height - margin.top - margin.bottom) / 2;
+        const amplitudeScale = d3.scaleLinear().domain([0, 1]).range([0, maxBarHeight]);
+
+        const waveformGroup = this.svg
+            .append('g')
+            .attr('fill', '#03A300')
+            .style('pointer-events', 'none');
+
+        const bandWidth = (width - margin.left - margin.right) / audioData.length;
+        waveformGroup
+            .selectAll('rect')
+            .data(audioData)
+            .join('rect')
+            .attr('width', bandWidth * padding)
+            .attr('x', (_, i) => this.xScale(i))
+            .attr('y', (d) => center - amplitudeScale(d))
+            .attr('height', (d) => amplitudeScale(d) * 2)
+            .attr('rx', bandWidth / 2)
+            .attr('ry', bandWidth / 2)
+            .attr('fill', '#03A300');
+
+        this.svg
+            .append('line')
+            .attr('x1', margin.left)
+            .attr('x2', width - margin.right)
+            .attr('y1', center)
+            .attr('y2', center)
+            .attr('stroke', '#aaa')
+            .attr('stroke-dasharray', '4 2');
+    }
+
+    // Отрисовка гладкой вейвформы (smooth) – непрерывная область с плавными кривыми
+    private drawSmoothWaveform(audioData: number[]) {
+        const { margin, height, width } = this.options;
+        const center = margin.top + (height - margin.top - margin.bottom) / 2;
+        const maxBarHeight = (height - margin.top - margin.bottom) / 2;
+        const amplitudeScale = d3.scaleLinear().domain([0, 1]).range([0, maxBarHeight]);
+
+        const waveformGroup = this.svg.append('g').style('pointer-events', 'none');
+
+        const areaUpper = d3
+            .area<number>()
+            .x((d, i) => this.xScale(i))
+            .y0(center)
+            .y1((d) => center - amplitudeScale(d))
+            .curve(d3.curveBasis);
+
+        const areaLower = d3
+            .area<number>()
+            .x((d, i) => this.xScale(i))
+            .y0(center)
+            .y1((d) => center + amplitudeScale(d))
+            .curve(d3.curveBasis);
+
+        const combinedArea = d3
+            .area<number>()
+            .x((d, i) => this.xScale(i))
+            .y0((d) => center + amplitudeScale(d))
+            .y1((d) => center - amplitudeScale(d))
+            .curve(d3.curveBasis);
+
+        waveformGroup
+            .append('path')
+            .datum(audioData)
+            .attr('d', combinedArea)
+            .attr('fill', '#03A300')
+            .attr('fill-opacity', 0.2);
+
+        waveformGroup
+            .append('path')
+            .datum(audioData)
+            .attr('d', areaUpper)
+            .attr('stroke', '#03A300')
+            .attr('stroke-width', 2)
+            .attr('fill', 'none');
+
+        waveformGroup
+            .append('path')
+            .datum(audioData)
+            .attr('d', areaLower)
+            .attr('stroke', '#03A300')
+            .attr('stroke-width', 2)
+            .attr('fill', 'none');
+
+        this.svg
+            .append('line')
+            .attr('x1', margin.left)
+            .attr('x2', width - margin.right)
+            .attr('y1', center)
+            .attr('y2', center)
+            .attr('stroke', '#aaa')
+            .attr('stroke-dasharray', '4 2');
+    }
+
+    // Отрисовка острой вейвформы (sharp) – ромб с острым верхом и низом (точки: левый базовый, верхний пик, правый базовый, нижний пик)
+    private drawSharpWaveform(audioData: number[]) {
+        const { margin, height, width, padding } = this.options;
+        const center = margin.top + (height - margin.top - margin.bottom) / 2;
+        const maxBarHeight = (height - margin.top - margin.bottom) / 2;
+        const amplitudeScale = d3.scaleLinear().domain([0, 1]).range([0, maxBarHeight]);
+        const bandWidth = (width - margin.left - margin.right) / audioData.length;
+        const waveformGroup = this.svg.append('g').style('pointer-events', 'none');
+
+        audioData.forEach((d, i) => {
+            const colWidth = bandWidth * padding;
+            const halfCol = colWidth / 2;
+            const xCenter = this.xScale(i);
+            const amp = amplitudeScale(d);
+
+            // ромб
+            const points = [
+                [xCenter - halfCol, center],
+                [xCenter, center - amp],
+                [xCenter + halfCol, center],
+                [xCenter, center + amp]
+            ];
+
+            const pathData = `M${points[0][0]},${points[0][1]} L${points[1][0]},${points[1][1]} L${points[2][0]},${points[2][1]} L${points[3][0]},${points[3][1]} Z`;
+            waveformGroup.append('path')
+                .attr('d', pathData)
+                .attr('fill', '#03A300');
+        });
+
+        // center line
+        this.svg
+            .append('line')
+            .attr('x1', margin.left)
+            .attr('x2', width - margin.right)
+            .attr('y1', center)
+            .attr('y2', center)
+            .attr('stroke', '#aaa')
+            .attr('stroke-dasharray', '4 2');
+    }
+
     public updateCursor(currentTime: number) {
         if (this.isDragging) return;
         const { margin, height } = this.options;
@@ -246,9 +358,9 @@ class Drawer {
         return filteredData.map((n) => n * multiplier);
     }
 
-    public init() {
+    public init(options?: Options) {
         const audioData = this.clearData();
-        const node = this.generateWaveform(audioData, {});
+        const node = this.generateWaveform(audioData, options || {});
         this.parent.innerHTML = '';
         this.parent.appendChild(node.node() as Element);
     }

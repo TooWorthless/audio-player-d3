@@ -1,6 +1,14 @@
 import React, { useCallback, useState, useRef } from 'react';
 import SoundDriver from './SoundDriver';
-import { Box, Button, Slider, Typography, Paper } from '@mui/material';
+import {
+    Box,
+    Button,
+    Slider,
+    Typography,
+    Paper,
+    Tabs,
+    Tab,
+} from '@mui/material';
 
 const Player: React.FC = () => {
     const soundController = useRef<SoundDriver | null>(null);
@@ -9,47 +17,52 @@ const Player: React.FC = () => {
     const [volume, setVolume] = useState(1);
     const [dropActive, setDropActive] = useState(false);
     const [fileName, setFileName] = useState<string>('');
+    const [waveformType, setWaveformType] = useState<'bars' | 'smooth' | 'sharp'>('bars');
 
     const dropZoneRef = useRef<HTMLDivElement>(null);
 
-    const handleFile = useCallback(async (file: File) => {
-        if (!file || !file.type.includes('audio')) {
-            alert('Invalid audio!');
-            return;
-        }
+    const handleFile = useCallback(
+        async (file: File) => {
+            if (!file || !file.type.includes('audio')) {
+                alert('Invalid audio!');
+                return;
+            }
+            setFileName(file.name);
+            setLoading(true);
 
-        setFileName(file.name);
-        setLoading(true);
-
-        if (soundController.current) {
+            if (soundController.current) {
+                try {
+                    await soundController.current.pause(true);
+                } catch (err) {
+                    console.error(err);
+                }
+            }
+            const soundInstance = new SoundDriver(file, volume);
             try {
-                await soundController.current.pause(true);
+                const container = document.getElementById('waveContainer');
+                await soundInstance.init(container);
+                soundController.current = soundInstance;
             } catch (err) {
                 console.error(err);
+            } finally {
+                setLoading(false);
+                soundInstance.drawChart({ waveformType });
             }
-        }
+        },
+        [volume, waveformType]
+    );
 
-        const soundInstance = new SoundDriver(file, volume);
-        try {
-            const container = document.getElementById('waveContainer');
-            await soundInstance.init(container);
-            soundController.current = soundInstance;
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-            soundInstance.drawChart();
-        }
-    }, [volume]);
-
-    const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-        setDropActive(false);
-        if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-            handleFile(event.dataTransfer.files[0]);
-            event.dataTransfer.clearData();
-        }
-    }, [handleFile]);
+    const onDrop = useCallback(
+        (event: React.DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            setDropActive(false);
+            if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+                handleFile(event.dataTransfer.files[0]);
+                event.dataTransfer.clearData();
+            }
+        },
+        [handleFile]
+    );
 
     const onDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -90,6 +103,11 @@ const Player: React.FC = () => {
         []
     );
 
+    const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
+        setWaveformType(newValue as 'bars' | 'smooth' | 'sharp');
+        soundController.current?.drawChart({ waveformType: newValue });
+    };
+
     return (
         <Box>
             <Paper
@@ -99,7 +117,7 @@ const Player: React.FC = () => {
                     mb: 2,
                     textAlign: 'center',
                     border: dropActive ? '2px dashed #1976d2' : '2px dashed transparent',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                 }}
                 ref={dropZoneRef}
                 onDrop={onDrop}
@@ -150,6 +168,19 @@ const Player: React.FC = () => {
                         aria-label="Volume"
                         sx={{ width: '50%', mx: 'auto', mb: 2 }}
                     />
+                    
+                    <Tabs
+                        value={waveformType}
+                        onChange={handleTabChange}
+                        textColor="primary"
+                        indicatorColor="primary"
+                        centered
+                        sx={{ mb: 2 }}
+                    >
+                        <Tab value="bars" label="Bars" />
+                        <Tab value="smooth" label="Smooth" />
+                        <Tab value="sharp" label="Sharp" />
+                    </Tabs>
                     <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
                         <Button variant="contained" color="primary" onClick={togglePlayer('play')}>
                             Play
