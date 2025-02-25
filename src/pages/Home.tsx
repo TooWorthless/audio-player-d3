@@ -4,6 +4,7 @@ import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
+
 const Home: React.FC = () => {
     return (
         <Container maxWidth="md" sx={{ mt: 4 }}>
@@ -12,9 +13,11 @@ const Home: React.FC = () => {
             </Typography>
             <Box sx={{ mt: 4, p: 2, border: '1px solid #ccc', borderRadius: 2 }}>
                 <Player />
+                {/* <AudioPlayer /> */}
             </Box>
         </Container>
     );
 };
+
 
 export default Home;
